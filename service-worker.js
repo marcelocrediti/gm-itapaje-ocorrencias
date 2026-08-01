@@ -14,7 +14,7 @@
 // mude o número da versão abaixo (ex: 'v1' para 'v2') — isso avisa
 // o celular que precisa baixar a versão nova assim que tiver internet.
 // ============================================================
-const CACHE_NAME = 'gm-itapaje-app-v2';
+const CACHE_NAME = 'gm-itapaje-app-v5';
 
 const ASSETS_TO_CACHE = [
   './',
