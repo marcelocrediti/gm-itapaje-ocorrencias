@@ -14,7 +14,7 @@
 // mude o número da versão abaixo (ex: 'v1' para 'v2') — isso avisa
 // o celular que precisa baixar a versão nova assim que tiver internet.
 // ============================================================
-const CACHE_NAME = 'gm-itapaje-app-v5';
+const CACHE_NAME = 'gm-itapaje-app-v6';
 
 const ASSETS_TO_CACHE = [
   './',
@@ -68,6 +68,26 @@ self.addEventListener('fetch', (event) => {
     return; // deixa passar direto pro Firebase cuidar
   }
 
+  // A PÁGINA PRINCIPAL do app (index.html) usa "internet primeiro": sempre busca a
+  // versão mais nova quando online, e só usa a cópia guardada se estiver offline.
+  // Isso evita ficar preso numa versão antiga depois de uma atualização — sem essa
+  // regra, o app sempre mostrava a cópia velha primeiro, mesmo com internet.
+  const isAppShell = event.request.mode === 'navigate' ||
+                      url.endsWith('/') || url.endsWith('/index.html');
+  if (isAppShell) {
+    event.respondWith(
+      fetch(event.request)
+        .then((networkResponse) => {
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, networkResponse.clone()).catch(()=>{}));
+          return networkResponse;
+        })
+        .catch(() => caches.match(event.request))
+    );
+    return;
+  }
+
+  // Os demais arquivos (bibliotecas do Firebase, PDF etc.) mudam raramente, então
+  // usam "cópia guardada primeiro" — mais rápido, e atualiza por trás quando puder.
   event.respondWith(
     caches.match(event.request).then((cachedResponse) => {
       const networkFetch = fetch(event.request)
