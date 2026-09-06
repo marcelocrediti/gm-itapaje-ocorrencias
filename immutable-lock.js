@@ -34,6 +34,14 @@
     async function guardedPersistReport(report, showStatus){
       if(!report || !report.id) return originalPersistReport(report, showStatus);
 
+      // Se o próprio aparelho já tem a marca de fechamento e o snapshot fixo,
+      // não consulta a internet a cada salvamento. Isso deixa o app muito mais rápido
+      // em sinal fraco e mantém o funcionamento offline completo.
+      if(report.everClosed === true && report.immutableSnapshot){
+        restoreImmutable(report, report.immutableSnapshot);
+        return originalPersistReport(report, showStatus);
+      }
+
       let serverData = null;
       try{
         if(typeof db !== 'undefined' && db && !testMode && navigator.onLine){
@@ -48,7 +56,6 @@
 
       if(wasEverClosed){
         let snapshot = null;
-
         if(serverData && serverData.immutableSnapshot){
           snapshot = clone(serverData.immutableSnapshot);
         }else if(report.immutableSnapshot){
@@ -56,10 +63,8 @@
         }else if(serverData){
           snapshot = makeSnapshot(serverData);
         }else{
-          // Primeiro fechamento feito offline: congela exatamente o que existe no aparelho naquele momento.
           snapshot = makeSnapshot(report);
         }
-
         restoreImmutable(report, snapshot);
       }
 
