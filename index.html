@@ -241,6 +241,13 @@ button{font-family:inherit;cursor:pointer;border:none;}
   z-index:999;border-left:4px solid var(--gold);
 }
 .app-toast.error{border-left-color:var(--red);}
+.reconnect-banner{
+  position:fixed;top:0;left:0;right:0;z-index:1500;
+  background:var(--navy);color:#fff;padding:12px 16px;
+  display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;
+  font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,0.3);border-bottom:3px solid var(--gold);
+}
+.reconnect-banner span{max-width:600px;}
 .app-footer-credit{
   text-align:center;font-size:10.5px;color:var(--ink-soft);opacity:0.55;
   padding:10px 20px 26px;letter-spacing:0.2px;flex-shrink:0;
@@ -911,12 +918,36 @@ async function loadTrash(){
     trashIndex = [];
   }
 }
+let currentReportServerUpdatedAt = null; // marca de quando o plantão foi lido, pra detectar edição concorrente
+
 async function loadReport(id){
   if(!ensureFirebase()) return null;
-  return await readReportData(id);
+  const report = await readReportData(id);
+  currentReportServerUpdatedAt = report ? (report.updatedAt || null) : null;
+  return report;
 }
 async function persistReport(report, showStatus){
   if(!ensureFirebase()) return;
+
+  // Verifica se outro aparelho salvou esse mesmo plantão depois que abrimos ele aqui —
+  // isso evita que um dispositivo apague, sem querer, o que o outro acabou de salvar
+  // (por exemplo, uma foto adicionada em outro celular). Só faz essa checagem quando
+  // online; offline, não tem como checar, e a prioridade é sempre conseguir salvar.
+  if(!testMode && navigator.onLine && currentReportServerUpdatedAt){
+    try{
+      const serverDoc = await db.collection('reports').doc(report.id).get();
+      if(serverDoc.exists){
+        const serverUpdatedAt = serverDoc.data().updatedAt;
+        if(serverUpdatedAt && serverUpdatedAt !== currentReportServerUpdatedAt){
+          showConflictWarning(report.id);
+          return; // não salva por cima sem a pessoa decidir o que fazer
+        }
+      }
+    }catch(e){
+      console.warn('Não foi possível checar edição concorrente (seguindo com o salvamento):', e);
+    }
+  }
+
   report.updatedAt = new Date().toISOString();
 
   let result;
@@ -937,6 +968,7 @@ async function persistReport(report, showStatus){
     }
     return;
   }
+  currentReportServerUpdatedAt = report.updatedAt; // atualiza a marca, já que acabamos de salvar
 
   const idx = reportsIndex.findIndex(r => r.id === report.id);
   const summary = { id: report.id, date: report.date, turno: report.turno, comandante: (report.officers && report.officers.comandante) || '', viaturas: [...new Set((report.vtrLog||[]).map(v=>v.viatura).filter(Boolean))].join(', '), status: report.status, occCount: report.occurrences.length };
@@ -948,6 +980,18 @@ async function persistReport(report, showStatus){
       : (navigator.onLine ? 'Salvo às ' + hora : '💾 Salvo no aparelho às ' + hora + ' — sincroniza sozinho quando voltar internet');
     flashStatus(modo);
   }
+}
+function showConflictWarning(reportId){
+  if(document.getElementById('conflictBanner')) return;
+  const el = document.createElement('div');
+  el.id = 'conflictBanner';
+  el.className = 'reconnect-banner';
+  el.style.borderBottomColor = 'var(--red)';
+  el.innerHTML = `
+    <span>⚠️ Outro aparelho salvou uma atualização deste plantão. Pra não apagar o que a outra pessoa fez, recarregue antes de continuar editando.</span>
+    <button id="btnReloadConflict" class="btn btn-gold btn-sm">Recarregar agora</button>`;
+  document.body.appendChild(el);
+  document.getElementById('btnReloadConflict').onclick = ()=> window.location.reload();
 }
 async function saveNow(){
   clearTimeout(saveTimer);
@@ -1021,10 +1065,23 @@ function isFatalFirestoreError(err){
   return msg.includes('already been terminated') ||
          msg.includes('INTERNAL ASSERTION FAILED');
 }
+// Antes, isso recarregava a página sozinho, sem avisar — o que podia acontecer
+// bem no meio da pessoa digitando, derrubando o que ainda não tinha sido salvo.
+// Agora só avisa com um banner, e quem decide quando recarregar é a pessoa.
 function recoverFromFatalError(err){
-  console.error('Erro fatal de conexão, recarregando o app:', err);
-  showToast('Reconectando ao sistema… um instante.', false);
-  setTimeout(()=>{ window.location.reload(); }, 900);
+  console.error('Erro de conexão detectado (sem recarregar sozinho):', err);
+  showReconnectBanner();
+}
+function showReconnectBanner(){
+  if(document.getElementById('reconnectBanner')) return; // já está mostrando, não duplica
+  const el = document.createElement('div');
+  el.id = 'reconnectBanner';
+  el.className = 'reconnect-banner';
+  el.innerHTML = `
+    <span>⚠️ Conexão com o sistema foi perdida (comum quando o app fica muito tempo em segundo plano). Termine o que estiver preenchendo, depois toque para reconectar.</span>
+    <button id="btnReconnectNow" class="btn btn-gold btn-sm">Reconectar agora</button>`;
+  document.body.appendChild(el);
+  document.getElementById('btnReconnectNow').onclick = ()=> window.location.reload();
 }
 
 function armConfirm(btn, onConfirm, armedLabel){
@@ -1396,6 +1453,7 @@ function renderEditor(){
       kmFinal: r.kmFinal || ''
     }];
   }
+  if(r.status === 'fechado' && r.everClosed === undefined) r.everClosed = true;
   if(!Array.isArray(r.atividades)) r.atividades = [];
   r.atividades.forEach(a=>{ if(a && !a.id) a.id = uid(); });
   if(!Array.isArray(r.occurrences)) r.occurrences = [];
@@ -1420,7 +1478,12 @@ function renderEditor(){
     `<div class="empty-state" style="padding:30px;">Nenhum registro do dia ainda. Use esse espaço pra rondas, PBs, apoios — o que não for ocorrência.</div>`;
 
   const dataFim = addDaysISO(r.date, 1);
-  const vtrHtml = r.vtrLog.map((v,i)=> renderVtrSegment(v,i,r.vtrLog.length)).join('');
+  // Uma vez fechado, os dados de equipe/viatura ficam travados pra sempre — mesmo se
+  // o plantão for reaberto depois. "Reabrir" serve só pra continuar lançando
+  // relatório do dia e ocorrências, não pra corrigir equipe/viatura.
+  const locked = r.everClosed === true;
+  const dis = locked ? 'disabled' : '';
+  const vtrHtml = r.vtrLog.map((v,i)=> renderVtrSegment(v,i,r.vtrLog.length,locked)).join('');
   const vtrTotals = computeVtrTotals(r.vtrLog);
   const vtrTotalsHtml = renderVtrTotalsHtml(vtrTotals);
 
@@ -1436,18 +1499,19 @@ function renderEditor(){
     <div class="card">
       <h3>Dados do plantão</h3>
       <div class="grid3">
-        <div><label>Início do plantão</label><input type="date" id="fDate" value="${r.date}"></div>
+        <div><label>Início do plantão</label><input type="date" id="fDate" value="${r.date}" ${dis}></div>
         <div><label>Término do plantão</label><input type="text" value="${fmtDateBR(dataFim)} — ${weekdayFromISO(dataFim)}" disabled style="background:#F4F6FA;color:var(--ink-soft);"></div>
-        <div><label>Turno</label><input type="text" id="fTurno" value="${escapeAttr(r.turno)}" placeholder="Ex: 07h às 07h (dia seguinte)"></div>
+        <div><label>Turno</label><input type="text" id="fTurno" value="${escapeAttr(r.turno)}" placeholder="Ex: 07h às 07h (dia seguinte)" ${dis}></div>
       </div>
       <label>Efetivo em serviço</label>
       <div class="grid2">
-        <div><label>Comandante</label><input type="text" id="fOfComandante" value="${escapeAttr(r.officers.comandante||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR"></div>
-        <div><label>Motorista</label><input type="text" id="fOfMotorista" value="${escapeAttr(r.officers.motorista||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR"></div>
-        <div><label>Patrulheiro 1</label><input type="text" id="fOfPatrulheiro1" value="${escapeAttr(r.officers.patrulheiro1||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR"></div>
-        <div><label>Patrulheiro 2</label><input type="text" id="fOfPatrulheiro2" value="${escapeAttr(r.officers.patrulheiro2||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR"></div>
-        <div><label>Patrulheiro 3</label><input type="text" id="fOfPatrulheiro3" value="${escapeAttr(r.officers.patrulheiro3||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR"></div>
+        <div><label>Comandante</label><input type="text" id="fOfComandante" value="${escapeAttr(r.officers.comandante||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
+        <div><label>Motorista</label><input type="text" id="fOfMotorista" value="${escapeAttr(r.officers.motorista||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
+        <div><label>Patrulheiro 1</label><input type="text" id="fOfPatrulheiro1" value="${escapeAttr(r.officers.patrulheiro1||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
+        <div><label>Patrulheiro 2</label><input type="text" id="fOfPatrulheiro2" value="${escapeAttr(r.officers.patrulheiro2||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
+        <div><label>Patrulheiro 3</label><input type="text" id="fOfPatrulheiro3" value="${escapeAttr(r.officers.patrulheiro3||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
       </div>
+      ${locked ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:10px;">🔒 Este plantão já foi fechado uma vez — esses dados ficam travados permanentemente, mesmo reabrindo o plantão.</p>` : ''}
     </div>
 
     <div class="card">
@@ -1455,8 +1519,9 @@ function renderEditor(){
         <h3 style="border:none;margin:0;padding:0;">Viaturas utilizadas no plantão</h3>
       </div>
       <div style="margin-top:14px;">${vtrHtml}</div>
-      <button class="btn btn-outline" id="btnAddVtr" style="margin-top:6px;">+ Registrar troca de viatura</button>
+      ${locked ? '' : `<button class="btn btn-outline" id="btnAddVtr" style="margin-top:6px;">+ Registrar troca de viatura</button>`}
       <div id="vtrTotalsBox" style="margin-top:14px;">${vtrTotalsHtml}</div>
+      ${locked ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:10px;">🔒 Este plantão já foi fechado uma vez — viaturas travadas permanentemente, mesmo reabrindo o plantão.</p>` : ''}
     </div>
 
     <div class="card" style="border-left:4px solid var(--gold);">
@@ -1508,29 +1573,30 @@ function renderEditor(){
   `;
 }
 
-function renderVtrSegment(v, i, total){
+function renderVtrSegment(v, i, total, locked){
   const ki = parseKm(v.kmInicial), kf = parseKm(v.kmFinal);
   const valid = !isNaN(ki) && !isNaN(kf) && kf >= ki;
   const kmTxt = valid ? formatKm(kf - ki) + ' km' : (v.kmFinal ? '—' : 'em aberto');
+  const dis = locked ? 'disabled' : '';
   return `
   <div class="occ-item" data-vi="${i}">
     <div class="occ-head">
       <span><span class="occ-num">${String(i+1).padStart(2,'0')}</span>${escapeHtml(v.viatura || 'Viatura não informada')}</span>
-      ${total > 1 ? `<button class="btn btn-danger btn-sm rm-vtr" data-vi="${i}">Remover</button>` : ''}
+      ${(total > 1 && !locked) ? `<button class="btn btn-danger btn-sm rm-vtr" data-vi="${i}">Remover</button>` : ''}
     </div>
     <div class="occ-body">
       <div class="grid3">
         <div style="position:relative;">
           <label>Viatura</label>
-          <input type="text" autocomplete="off" class="vtr-viatura-input" data-vfield="viatura" data-vi="${i}" value="${escapeAttr(v.viatura||'')}" placeholder="Toque para ver as opções">
+          <input type="text" autocomplete="off" class="vtr-viatura-input" data-vfield="viatura" data-vi="${i}" value="${escapeAttr(v.viatura||'')}" placeholder="Toque para ver as opções" ${dis}>
           <div class="vtr-suggest-dropdown" id="vtrSuggest-${i}"></div>
         </div>
-        <div><label>Placa</label><input type="text" data-vfield="placa" data-vi="${i}" value="${escapeAttr(v.placa||'')}" placeholder="Ex: ABC-1D23"></div>
-        <div><label>Horário que pegou a viatura</label><input type="time" data-vfield="horaInicio" data-vi="${i}" value="${v.horaInicio||''}"></div>
+        <div><label>Placa</label><input type="text" data-vfield="placa" data-vi="${i}" value="${escapeAttr(v.placa||'')}" placeholder="Ex: ABC-1D23" ${dis}></div>
+        <div><label>Horário que pegou a viatura</label><input type="time" data-vfield="horaInicio" data-vi="${i}" value="${v.horaInicio||''}" ${dis}></div>
       </div>
       <div class="grid2">
-        <div><label>Km inicial</label><input type="text" inputmode="numeric" class="km-input" data-vfield="kmInicial" data-vi="${i}" value="${escapeAttr(formatKm(v.kmInicial)||'')}" placeholder="Ex: 45.210"></div>
-        <div><label>Km final</label><input type="text" inputmode="numeric" class="km-input" data-vfield="kmFinal" data-vi="${i}" value="${escapeAttr(formatKm(v.kmFinal)||'')}" placeholder="Preencher ao trocar/encerrar"></div>
+        <div><label>Km inicial</label><input type="text" inputmode="numeric" class="km-input" data-vfield="kmInicial" data-vi="${i}" value="${escapeAttr(formatKm(v.kmInicial)||'')}" placeholder="Ex: 45.210" ${dis}></div>
+        <div><label>Km final</label><input type="text" inputmode="numeric" class="km-input" data-vfield="kmFinal" data-vi="${i}" value="${escapeAttr(formatKm(v.kmFinal)||'')}" placeholder="Preencher ao trocar/encerrar" ${dis}></div>
       </div>
       <div style="text-align:right;font-size:12.5px;color:var(--ink-soft);font-family:'IBM Plex Mono',monospace;">
         Km rodado neste trecho: <strong id="vtrKm-${i}" style="color:var(--ink);">${kmTxt}</strong>
@@ -1715,6 +1781,7 @@ function wireEditorEvents(){
   if(btnClose) btnClose.onclick = ()=>{
     armConfirm(btnClose, ()=>{
       r.status = 'fechado';
+      r.everClosed = true; // marca permanente — trava equipe/viatura mesmo se reabrir depois
       render(); // atualiza a tela na hora, sem esperar a internet confirmar
       saveNow(); // salva por trás — funciona local mesmo offline, sincroniza quando voltar sinal
     });
@@ -1723,6 +1790,7 @@ function wireEditorEvents(){
   if(btnReopen) btnReopen.onclick = ()=>{
     armConfirm(btnReopen, ()=>{
       r.status = 'aberto';
+      // r.everClosed NÃO é desfeito aqui de propósito — equipe/viatura continuam travadas
       render(); // atualiza a tela na hora, sem esperar a internet confirmar
       saveNow(); // salva por trás — funciona local mesmo offline, sincroniza quando voltar sinal
     });
@@ -2312,8 +2380,10 @@ function closePdfPreview(){
 // sem precisar mexer no código.
 const DEFAULT_APP_PASSWORD = 'Sentinela2026';
 let APP_PASSWORD = DEFAULT_APP_PASSWORD;
+let APP_AUTH_VERSION = 1;
 const LS_BIOMETRIC_CRED = 'gmItapaje_biometricCredId';
 const LS_BIOMETRIC_OFFERED = 'gmItapaje_biometricOffered';
+const LS_AUTH_VERSION = 'gmItapaje_authVersion';
 
 async function loadAppPassword(){
   if(testMode || !firebaseReady || !db) return;
@@ -2321,8 +2391,9 @@ async function loadAppPassword(){
     const doc = await db.collection('config').doc('appAccess').get();
     if(doc.exists && doc.data().password){
       APP_PASSWORD = doc.data().password;
+      APP_AUTH_VERSION = doc.data().authVersion || 1;
     }else{
-      await db.collection('config').doc('appAccess').set({ password: DEFAULT_APP_PASSWORD });
+      await db.collection('config').doc('appAccess').set({ password: DEFAULT_APP_PASSWORD, authVersion: 1 });
     }
   }catch(e){ console.warn('Não foi possível carregar a senha do Firebase, usando a padrão local:', e); }
 }
@@ -2358,6 +2429,10 @@ async function registerBiometric(){
       }
     });
     localStorage.setItem(LS_BIOMETRIC_CRED, bufToBase64(credential.rawId));
+    // Marca com qual "versão" da senha essa biometria foi ativada. Se o comandante
+    // trocar a senha e aumentar a versão no Firestore, essa biometria vira inválida
+    // automaticamente — mesmo sem eu poder mexer em cada celular individualmente.
+    localStorage.setItem(LS_AUTH_VERSION, String(APP_AUTH_VERSION));
     return true;
   }catch(e){
     console.warn('Não foi possível ativar a biometria:', e);
@@ -2367,7 +2442,7 @@ async function registerBiometric(){
 
 async function verifyBiometric(){
   const storedId = localStorage.getItem(LS_BIOMETRIC_CRED);
-  if(!storedId) return false;
+  if(!storedId) return { ok:false, reason:'none' };
   try{
     await navigator.credentials.get({
       publicKey: {
@@ -2377,10 +2452,16 @@ async function verifyBiometric(){
         timeout: 60000
       }
     });
-    return true; // se não deu erro, o celular confirmou a digital/rosto
+    // A digital/rosto bateu — mas ainda falta conferir se essa biometria não foi
+    // revogada por uma troca de senha feita pelo comandante nesse meio tempo.
+    const localVersion = localStorage.getItem(LS_AUTH_VERSION);
+    if(localVersion !== String(APP_AUTH_VERSION)){
+      return { ok:false, reason:'revoked' };
+    }
+    return { ok:true };
   }catch(e){
     console.warn('Biometria não confirmada:', e);
-    return false;
+    return { ok:false, reason:'failed' };
   }
 }
 
@@ -2433,9 +2514,20 @@ function wireLoginGate(){
   pwdInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') trySubmitPassword(); });
 
   document.getElementById('btnBiometricLogin').onclick = async ()=>{
-    const ok = await verifyBiometric();
-    if(ok){ hideLoginGate(); }
-    else{ showToast('Não foi possível confirmar a biometria. Tente de novo ou use a senha.', true); }
+    const result = await verifyBiometric();
+    if(result.ok){
+      hideLoginGate();
+    }else if(result.reason === 'revoked'){
+      localStorage.removeItem(LS_BIOMETRIC_CRED);
+      localStorage.removeItem(LS_AUTH_VERSION);
+      localStorage.removeItem(LS_BIOMETRIC_OFFERED);
+      showToast('A senha da equipe foi trocada. Digite a senha nova pra continuar.', true);
+      document.getElementById('loginBiometricStep').style.display = 'none';
+      document.getElementById('loginPasswordStep').style.display = 'block';
+      setTimeout(()=> pwdInput.focus(), 100);
+    }else{
+      showToast('Não foi possível confirmar a biometria. Tente de novo ou use a senha.', true);
+    }
   };
   document.getElementById('btnUsePasswordInstead').onclick = ()=>{
     document.getElementById('loginBiometricStep').style.display = 'none';
