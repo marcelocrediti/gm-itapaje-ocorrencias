@@ -1,12 +1,13 @@
 // ============================================================
 // Service Worker — Sistema de Ocorrências, Guarda Municipal de Itapajé
 // ============================================================
-const CACHE_NAME = 'gm-itapaje-app-v11';
+const CACHE_NAME = 'gm-itapaje-app-v12';
 
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './immutable-lock.js',
+  './mobile-touch-fix.js',
   'https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js',
   'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js',
@@ -44,7 +45,9 @@ async function injectProtection(response){
 
     let html = await response.text();
     if(!html.includes('immutable-lock.js')){
-      html = html.replace('</body>', '<script src="./immutable-lock.js"></script></body>');
+      html = html.replace('</body>', '<script src="./immutable-lock.js"></script><script src="./mobile-touch-fix.js"></script></body>');
+    }else if(!html.includes('mobile-touch-fix.js')){
+      html = html.replace('</body>', '<script src="./mobile-touch-fix.js"></script></body>');
     }
 
     const headers = new Headers(response.headers);
@@ -55,7 +58,7 @@ async function injectProtection(response){
       headers
     });
   }catch(e){
-    console.warn('Não foi possível aplicar a proteção dos campos fixos:', e);
+    console.warn('Não foi possível aplicar os ajustes locais do aplicativo:', e);
     return response;
   }
 }
