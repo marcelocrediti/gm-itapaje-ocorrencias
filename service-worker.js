@@ -1,13 +1,14 @@
 // ============================================================
 // Service Worker — Sistema de Ocorrências, Guarda Municipal de Itapajé
 // ============================================================
-const CACHE_NAME = 'gm-itapaje-app-v12';
+const CACHE_NAME = 'gm-itapaje-app-v13';
 
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './immutable-lock.js',
   './mobile-touch-fix.js',
+  './startup-fast.js',
   'https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js',
   'https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js',
@@ -44,6 +45,12 @@ async function injectProtection(response){
     if(!contentType.includes('text/html')) return response;
 
     let html = await response.text();
+
+    // startup-fast precisa carregar ANTES do init(); para trocar a abertura por cache-first.
+    if(!html.includes('startup-fast.js')){
+      html = html.replace(/\ninit\(\);\s*<\/script>/, '\n<script src="./startup-fast.js"></script>\n<script>init();</script>');
+    }
+
     if(!html.includes('immutable-lock.js')){
       html = html.replace('</body>', '<script src="./immutable-lock.js"></script><script src="./mobile-touch-fix.js"></script></body>');
     }else if(!html.includes('mobile-touch-fix.js')){
@@ -77,14 +84,22 @@ self.addEventListener('fetch', (event) => {
 
   if (isAppShell) {
     event.respondWith((async()=>{
+      // Cache-first para a casca visual: abre imediatamente e atualiza por trás.
+      const cached = await caches.match(event.request);
+      if(cached){
+        fetch(event.request).then((networkResponse)=>{
+          caches.open(CACHE_NAME).then((cache)=>cache.put(event.request, networkResponse.clone()).catch(()=>{}));
+        }).catch(()=>{});
+        return injectProtection(cached);
+      }
+
       try{
         const networkResponse = await fetch(event.request);
         const cacheCopy = networkResponse.clone();
         caches.open(CACHE_NAME).then((cache)=>cache.put(event.request, cacheCopy).catch(()=>{}));
         return injectProtection(networkResponse);
       }catch(e){
-        const cached = await caches.match(event.request);
-        return injectProtection(cached);
+        return new Response('<!doctype html><html><body style="margin:0;background:#F5F7FA;font-family:sans-serif"><div style="padding:24px">Abra o sistema uma vez com internet para ativar o modo offline.</div></body></html>', {headers:{'content-type':'text/html; charset=utf-8'}});
       }
     })());
     return;
