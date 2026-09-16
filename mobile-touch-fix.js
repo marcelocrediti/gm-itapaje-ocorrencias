@@ -27,6 +27,8 @@
   // Mantém a posição horizontal zerada e deixa o navegador cuidar apenas do
   // deslocamento vertical necessário para enxergar o campo ativo.
   window.addEventListener('scroll', () => {
+    // Durante a prévia do PDF, a área interna precisa receber a pinça inteira.
+    if (document.getElementById('pdfModal')?.style.display === 'flex') return;
     if (window.scrollX !== 0) window.scrollTo(0, window.scrollY);
   }, {passive:true});
 
