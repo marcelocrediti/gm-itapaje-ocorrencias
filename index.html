@@ -142,6 +142,7 @@ html{
   width:100%;
   max-width:100%;
   overflow-x:hidden;
+  overflow-x:clip;
   overscroll-behavior-x:none;
   touch-action:pan-y pinch-zoom;
 }
@@ -155,11 +156,15 @@ body{
   max-width:100%;
   min-height:100vh;
   overflow-x:hidden;
+  overflow-x:clip;
   overscroll-behavior-x:none;
   touch-action:pan-y pinch-zoom;
   display:flex;
   flex-direction:column;
   -webkit-font-smoothing:antialiased;
+  position:relative;
+  left:0;
+  right:0;
 }
 body > *, #app, .wrap{max-width:100%;}
 img, canvas, video{max-width:100%;}
@@ -884,6 +889,16 @@ window.addEventListener('online', updateConnBadge);
 window.addEventListener('offline', updateConnBadge);
 
 let trashIndex = [];
+const FAST_INDEX_KEY = 'gmItapaje_fastIndex_v2';
+function restoreFastIndex(){
+  try{
+    const cached = JSON.parse(localStorage.getItem(FAST_INDEX_KEY) || '[]');
+    if(Array.isArray(cached) && cached.length) reportsIndex = cached;
+  }catch(e){}
+}
+function saveFastIndex(){
+  try{ localStorage.setItem(FAST_INDEX_KEY, JSON.stringify(reportsIndex)); }catch(e){}
+}
 
 // Em Firebase real, as fotos de cada ocorrência ficam numa subcoleção própria
 // (reports/{id}/occPhotos/{occId}), fora do documento principal do plantão.
@@ -976,10 +991,11 @@ async function loadIndex(){
         occCount: (data.occurrences||[]).length
       };
     });
+    saveFastIndex();
   }catch(e){
     console.error(e);
     if(isFatalFirestoreError(e)){ recoverFromFatalError(e); return; }
-    reportsIndex = [];
+    // Mantém a lista local já exibida se a internet estiver lenta ou indisponível.
   }
 }
 async function loadTrash(){
@@ -1055,6 +1071,7 @@ async function persistReport(report, showStatus){
   const idx = reportsIndex.findIndex(r => r.id === report.id);
   const summary = { id: report.id, date: report.date, turno: report.turno, comandante: getCommanderNames(report), viaturas: [...new Set((report.vtrLog||[]).map(v=>v.viatura).filter(Boolean))].join(', '), status: report.status, occCount: report.occurrences.length };
   if(idx >= 0) reportsIndex[idx] = summary; else reportsIndex.unshift(summary);
+  saveFastIndex();
   if(showStatus){
     const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     const modo = testMode
@@ -1063,6 +1080,7 @@ async function persistReport(report, showStatus){
     flashStatus(modo);
   }
 }
+window.persistReport = persistReport;
 function showConflictWarning(reportId){
   if(document.getElementById('conflictBanner')) return;
   const el = document.createElement('div');
@@ -1077,7 +1095,7 @@ function showConflictWarning(reportId){
 }
 async function saveNow(){
   clearTimeout(saveTimer);
-  await persistReport(currentReport, true);
+  await window.persistReport(currentReport, true);
 }
 async function moveToTrash(id){
   if(!ensureFirebase()) return;
@@ -1088,6 +1106,7 @@ async function moveToTrash(id){
     report.deletedAt = new Date().toISOString();
     await writeReportData(id, report);
     reportsIndex = reportsIndex.filter(r => r.id !== id);
+    saveFastIndex();
   }catch(e){
     console.error('Erro ao mover para a lixeira:', e);
     showToast('Erro ao mover para a lixeira: ' + (e.message || e), true);
@@ -1189,8 +1208,9 @@ function armConfirm(btn, onConfirm, armedLabel){
 
 function scheduleSave(){
   clearTimeout(saveTimer);
-  setStatus('Salvando…', true);
-  saveTimer = setTimeout(() => persistReport(currentReport, true), 600);
+  // Registra a alteração sem deixar a tela presa em “Salvando…”.
+  setStatus('', false);
+  saveTimer = setTimeout(() => window.persistReport(currentReport, true), 250);
 }
 function flashStatus(msg){ setStatus(msg, false); }
 function setStatus(msg, saving){
@@ -1204,7 +1224,7 @@ function setStatus(msg, saving){
 function flushPendingSave(){
   if(currentReport && view === 'editor'){
     clearTimeout(saveTimer);
-    persistReport(currentReport, false);
+    window.persistReport(currentReport, false);
   }
 }
 document.addEventListener('visibilitychange', ()=>{
@@ -1306,15 +1326,15 @@ async function render(){
     };
     document.getElementById('btnSave').onclick = () => {
       const btn = document.getElementById('btnSave');
-      btn.disabled = true; btn.textContent = 'Salvando…';
+      btn.disabled = true;
+      btn.textContent = '✅ Salvo';
+      setStatus('Alterações salvas.', false);
       saveNow().catch((err)=>{
         console.error('Erro ao salvar:', err);
         showToast('Erro ao salvar: ' + (err.message || err), true);
       });
-      // Não espera a internet confirmar — o salvamento local já aconteceu.
-      // Sem essa proteção, o botão ficaria travado em "Salvando…" pra sempre
-      // quando não houvesse sinal (só liberava quando a internet voltasse).
-      setTimeout(()=>{ btn.disabled = false; btn.textContent = '💾 Salvar'; }, 500);
+      // A confirmação visual é imediata; a sincronização continua em segundo plano.
+      setTimeout(()=>{ btn.disabled = false; btn.textContent = '💾 Salvar'; }, 350);
     };
   }
   }catch(err){
@@ -2886,11 +2906,13 @@ async function init(){
       </div>`;
     return;
   }
-  document.getElementById('app').innerHTML = '<div class="empty-state">Carregando…</div>';
-  await loadIndex();
-  await loadTrash();
-  await loadLegalKB();
+  // Mostra a última lista conhecida imediatamente. A sincronização completa
+  // acontece em segundo plano e não segura mais a abertura do aplicativo.
+  restoreFastIndex();
   render();
+  Promise.allSettled([loadIndex(), loadTrash(), loadLegalKB()]).then(()=>{
+    if(view === 'dashboard') render();
+  });
 }
 init();
 
@@ -2899,14 +2921,25 @@ init();
 // hospedado num site de verdade (https://... ou localhost) — não dentro
 // desta pré-visualização de teste.
 if('serviceWorker' in navigator){
+  let reloadingForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    window.location.reload();
+  });
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js')
-      .then(()=> console.log('App pronto para uso offline.'))
+    navigator.serviceWorker.register('./service-worker.js?v=17', { updateViaCache:'none' })
+      .then((registration)=>{
+        registration.update().catch(()=>{});
+        console.log('App pronto para uso offline.');
+      })
       .catch((err)=> console.warn('Não foi possível ativar o uso offline completo:', err));
   });
 }
 
 })();
 </script>
+<script src="./immutable-lock.js?v=17"></script>
+<script src="./mobile-touch-fix.js?v=17"></script>
 </body>
 </html>
