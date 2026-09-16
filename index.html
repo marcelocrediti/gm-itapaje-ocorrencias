@@ -2,9 +2,15 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="color-scheme" content="light only">
 <meta name="theme-color" content="#0A1F44">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ocorrências GCM">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./app-icon.svg" type="image/svg+xml">
 <title>Sistema de Ocorrências — Guarda Municipal de Itapajé</title>
 <script>
 /* ============================================================
@@ -435,17 +441,48 @@ button{font-family:inherit;cursor:pointer;border:none;}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
 @media(max-width:600px){
   .grid2,.grid3{grid-template-columns:minmax(0,1fr);}
-  .topbar{padding-left:14px;padding-right:14px;}
-  .topbar-titles{min-width:0;flex-basis:calc(100% - 110px);}
-  .topbar-right{width:100%;margin-left:0;justify-content:space-between;}
-  .topbar-actions{min-width:0;}
-  .report-card{align-items:flex-start;flex-wrap:wrap;}
-  .report-card .rc-main{flex:1 1 180px;max-width:100%;}
-  .rc-actions{max-width:100%;flex-wrap:wrap;}
+  body{font-size:16px;}
+  .topbar{
+    padding:calc(12px + env(safe-area-inset-top)) 12px 12px;
+    column-gap:10px;row-gap:10px;
+  }
+  .seal-group{gap:6px;}
+  .seal-img{width:34px;height:34px;}
+  .seal-divider{height:26px;}
+  .topbar-titles{min-width:0;flex:1 1 calc(100% - 92px);}
+  .topbar-titles .eyebrow{font-size:8px;letter-spacing:1px;line-height:1.25;}
+  .topbar-titles h1{font-size:15px;line-height:1.18;}
+  .topbar-right{
+    width:100%;margin-left:0;display:grid;
+    grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;
+  }
+  .topbar-actions{min-width:0;width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:8px;}
+  .topbar-actions .btn{width:100%;padding:10px 8px;white-space:normal;line-height:1.2;}
+  .conn-badge{justify-content:center;}
+  .wrap{padding:18px 12px calc(28px + env(safe-area-inset-bottom));}
+  .legal-kb-note{text-align:left !important;font-size:10.5px !important;line-height:1.4;overflow-wrap:anywhere;}
+  .dash-head{margin-bottom:18px;}
+  .dash-head h2{font-size:22px;line-height:1.15;}
+  .dash-head p{font-size:13px;line-height:1.35;}
+  .date-group{margin-bottom:20px;}
+  .date-group-label{flex-direction:column;align-items:flex-start;gap:3px;padding:9px 10px;line-height:1.35;}
+  .report-card{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;padding:13px 12px;gap:12px;}
+  .report-card .rc-main{width:100%;max-width:100%;}
+  .report-card .rc-title{font-size:15px;line-height:1.35;}
+  .report-card .rc-sub{font-size:13px;line-height:1.35;margin-top:4px;}
+  .rc-actions{width:100%;max-width:100%;display:grid;grid-template-columns:minmax(0,1fr) 44px 44px;gap:8px;}
+  .rc-badge{display:flex;align-items:center;justify-content:center;min-height:44px;text-align:center;white-space:normal;line-height:1.15;}
+  .rc-icon-btn{width:44px;height:44px;font-size:17px;}
   .card{padding:16px 14px;}
   .occ-body{padding:14px;}
   .add-row{flex-wrap:wrap;}
   .add-row input{min-width:0;flex:1 1 180px;}
+  .closure-box{align-items:flex-start;padding:13px 12px;}
+  .closure-box .btn{width:100%;}
+  .pdf-modal{height:100dvh;max-height:100dvh;border-radius:0;}
+  .pdf-modal-actions{width:100%;display:grid;grid-template-columns:1fr 1fr;}
+  .pdf-modal-actions .btn{width:100%;}
+  .app-footer-credit{padding-bottom:calc(20px + env(safe-area-inset-bottom));}
 }
 
 .closure-box{
@@ -1397,7 +1434,7 @@ function renderDashboard(){
     </div>` : '';
 
   const legalKbNote = (!testMode && legalKbUpdatedAt) ? `
-    <div style="font-size:11px;color:var(--ink-soft);text-align:right;margin-bottom:8px;">
+    <div class="legal-kb-note" style="font-size:11px;color:var(--ink-soft);text-align:right;margin-bottom:8px;">
       ⚖️ Base de leis (identificação automática) atualizada em ${new Date(legalKbUpdatedAt).toLocaleDateString('pt-BR')}
       — editável na coleção <code>config/legalKB</code> do Firebase, sem precisar mexer no app.
     </div>` : '';

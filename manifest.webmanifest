@@ -1,0 +1,19 @@
+{
+  "name": "Sistema de Ocorrências — Guarda Municipal de Itapajé",
+  "short_name": "Ocorrências GCM",
+  "description": "Registro de plantões e ocorrências da Guarda Municipal de Itapajé.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#0A1F44",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

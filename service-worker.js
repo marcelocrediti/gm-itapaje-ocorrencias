@@ -1,13 +1,15 @@
 // ============================================================
 // Service Worker — Sistema de Ocorrências, Guarda Municipal de Itapajé
 // ============================================================
-const CACHE_NAME = 'gm-itapaje-app-v19';
+const CACHE_NAME = 'gm-itapaje-app-v20';
 
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
-  './immutable-lock.js?v=19',
-  './mobile-touch-fix.js?v=19',
+  './manifest.webmanifest',
+  './app-icon.svg',
+  './immutable-lock.js?v=20',
+  './mobile-touch-fix.js?v=20',
   'https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js',
   'https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;900&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap'
@@ -47,9 +49,9 @@ async function injectProtection(response){
     }
 
     if(!html.includes('immutable-lock.js')){
-      html = html.replace('</body>', '<script src="./immutable-lock.js?v=19"></script><script src="./mobile-touch-fix.js?v=19"></script></body>');
+      html = html.replace('</body>', '<script src="./immutable-lock.js?v=20"></script><script src="./mobile-touch-fix.js?v=20"></script></body>');
     }else if(!html.includes('mobile-touch-fix.js')){
-      html = html.replace('</body>', '<script src="./mobile-touch-fix.js?v=19"></script></body>');
+      html = html.replace('</body>', '<script src="./mobile-touch-fix.js?v=20"></script></body>');
     }
 
     const headers = new Headers(response.headers);
