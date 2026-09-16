@@ -11,13 +11,23 @@
       overscroll-behavior-y: contain;
       touch-action: pan-y pinch-zoom;
       -webkit-overflow-scrolling: touch;
+      scroll-behavior: auto !important;
+      overflow-anchor: none !important;
     }
     body > *, #app, .wrap { max-width: 100%; }
     button, .btn, [role="button"], a { touch-action: manipulation; -webkit-tap-highlight-color: rgba(0,0,0,.08); }
-    button, .btn { min-height: 44px; }
+    button, .btn { min-height: 40px; }
     input, select, textarea { font-size: 16px; }
     .btn:active, button:active { transform: none; }
+    input:focus, select:focus, textarea:focus { scroll-margin-top: 12px; scroll-margin-bottom: 12px; }
   `;
   document.head.appendChild(style);
+
+  // O teclado do celular pode tentar reposicionar a página a cada tecla.
+  // Mantém a posição horizontal zerada e deixa o navegador cuidar apenas do
+  // deslocamento vertical necessário para enxergar o campo ativo.
+  window.addEventListener('scroll', () => {
+    if (window.scrollX !== 0) window.scrollTo(0, window.scrollY);
+  }, {passive:true});
 
 })();

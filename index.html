@@ -176,6 +176,7 @@ html{
 }
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:#FFFFFF;}
+html{scroll-behavior:auto !important;overflow-anchor:none;}
 body{
   background:var(--parchment);
   color:var(--ink);
@@ -193,6 +194,7 @@ body{
   position:relative;
   left:0;
   right:0;
+  overflow-anchor:none;
 }
 body > *, #app, .wrap{max-width:100%;}
 img, canvas, video{max-width:100%;}
@@ -595,7 +597,7 @@ input:focus,textarea:focus,select:focus{
 .toolbar{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
 .status-msg{
   font-size:12.5px;color:var(--green);font-family:'IBM Plex Mono',monospace;
-  min-height:16px;
+  min-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .status-msg.saving{color:var(--ink-soft);}
 
@@ -1276,7 +1278,7 @@ function scheduleSave(){
   clearTimeout(saveTimer);
   // Registra a alteração sem deixar a tela presa em “Salvando…”.
   setStatus('', false);
-  saveTimer = setTimeout(() => window.persistReport(currentReport, true), 250);
+  saveTimer = setTimeout(() => window.persistReport(currentReport, true), 700);
 }
 function flashStatus(msg){ setStatus(msg, false); }
 function setStatus(msg, saving){
@@ -2970,7 +2972,7 @@ if('serviceWorker' in navigator){
     window.location.reload();
   });
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js?v=18', { updateViaCache:'none' })
+    navigator.serviceWorker.register('./service-worker.js?v=25', { updateViaCache:'none' })
       .then((registration)=>{
         registration.update().catch(()=>{});
         console.log('App pronto para uso offline.');
@@ -2981,7 +2983,7 @@ if('serviceWorker' in navigator){
 
 })();
 </script>
-<script src="./immutable-lock.js?v=18"></script>
-<script src="./mobile-touch-fix.js?v=18"></script>
+<script src="./immutable-lock.js?v=25"></script>
+<script src="./mobile-touch-fix.js?v=25"></script>
 </body>
 </html>
