@@ -8,9 +8,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Ocorrências GCM">
+<meta name="apple-mobile-web-app-title" content="Ocorrências">
 <link rel="manifest" href="./manifest.webmanifest">
-<link rel="icon" href="./app-icon.svg" type="image/svg+xml">
+<link rel="icon" href="./icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <title>Sistema de Ocorrências — Guarda Municipal de Itapajé</title>
 <script>
 /* ============================================================
@@ -456,8 +457,8 @@ button{font-family:inherit;cursor:pointer;border:none;}
     width:100%;margin-left:0;display:grid;
     grid-template-columns:auto minmax(0,1fr);align-items:center;gap:8px;
   }
-  .topbar-actions{min-width:0;width:100%;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:8px;}
-  .topbar-actions .btn{width:100%;padding:10px 8px;white-space:normal;line-height:1.2;}
+  .topbar-actions{min-width:0;width:100%;display:flex;gap:6px;}
+  .topbar-actions .btn{flex:1 1 0;width:auto;min-width:0;min-height:38px;padding:8px 4px;font-size:12px;white-space:nowrap;line-height:1.15;}
   .conn-badge{justify-content:center;}
   .wrap{padding:18px 12px calc(28px + env(safe-area-inset-bottom));}
   .legal-kb-note{text-align:left !important;font-size:10.5px !important;line-height:1.4;overflow-wrap:anywhere;}
@@ -470,9 +471,9 @@ button{font-family:inherit;cursor:pointer;border:none;}
   .report-card .rc-main{width:100%;max-width:100%;}
   .report-card .rc-title{font-size:15px;line-height:1.35;}
   .report-card .rc-sub{font-size:13px;line-height:1.35;margin-top:4px;}
-  .rc-actions{width:100%;max-width:100%;display:grid;grid-template-columns:minmax(0,1fr) 44px 44px;gap:8px;}
-  .rc-badge{display:flex;align-items:center;justify-content:center;min-height:44px;text-align:center;white-space:normal;line-height:1.15;}
-  .rc-icon-btn{width:44px;height:44px;font-size:17px;}
+  .rc-actions{width:100%;max-width:100%;display:grid;grid-template-columns:minmax(0,1fr) 38px 38px;gap:6px;}
+  .rc-badge{display:flex;align-items:center;justify-content:center;min-height:38px;padding:3px 6px;text-align:center;white-space:normal;line-height:1.15;}
+  .rc-icon-btn{width:38px;height:38px;font-size:15px;}
   .card{padding:16px 14px;}
   .occ-body{padding:14px;}
   .add-row{flex-wrap:wrap;}
@@ -1305,8 +1306,22 @@ async function render(){
     app.innerHTML = renderDashboard();
     document.getElementById('btnNew').onclick = createNewReport;
     document.getElementById('btnTrash').onclick = async () => { view='trash'; await loadTrash(); render(); };
-    document.querySelectorAll('.report-card').forEach(card=>{
-      card.onclick = () => openReport(card.dataset.id);
+    document.querySelectorAll('.report-card[data-id]').forEach(card=>{
+      let moved = false;
+      let startX = 0;
+      let startY = 0;
+      card.addEventListener('pointerdown', e=>{
+        moved = false;
+        startX = e.clientX;
+        startY = e.clientY;
+      }, {passive:true});
+      card.addEventListener('pointermove', e=>{
+        if(Math.abs(e.clientX-startX) > 8 || Math.abs(e.clientY-startY) > 8) moved = true;
+      }, {passive:true});
+      card.addEventListener('click', e=>{
+        if(moved){ e.preventDefault(); return; }
+        openReport(card.dataset.id);
+      });
     });
     document.querySelectorAll('.rc-edit').forEach(btn=>{
       btn.onclick = (e) => { e.stopPropagation(); openReport(btn.dataset.id); };
