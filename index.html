@@ -365,8 +365,10 @@ button{font-family:inherit;cursor:pointer;border:none;}
 }
 .pdf-modal-header span{font-weight:700;font-size:14px;}
 .pdf-modal-actions{display:flex;gap:8px;}
-#pdfModalPages{flex:1;width:100%;overflow-y:auto;background:#e8e8e8;padding:16px 12px;box-sizing:border-box;}
+#pdfModalPages{flex:1;width:100%;overflow:auto;background:#e8e8e8;padding:16px 12px;box-sizing:border-box;touch-action:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;}
 #pdfModalPages canvas{display:block;margin:0 auto 16px;box-shadow:0 2px 10px rgba(0,0,0,0.2);max-width:100%;height:auto;background:#fff;}
+#pdfModalPages.pdf-native-view{padding:0;overflow:hidden;background:#555;}
+#pdfModalPages.pdf-native-view iframe{display:block;width:100%;height:100%;border:0;background:#fff;touch-action:auto;}
 
 /* ---------- Layout ---------- */
 .wrap{max-width:920px;width:100%;margin:0 auto;padding:28px 20px 40px;background:#FFFFFF;flex:1 0 auto;box-sizing:border-box;}
@@ -2719,6 +2721,16 @@ async function showPdfPreview(blob, filename){
   overlay.style.display = 'flex';
   pagesBox.innerHTML = '<div style="text-align:center;padding:50px 20px;color:#666;">Carregando prévia…</div>';
 
+  // No celular, usa o visualizador nativo do navegador. Ele trata a pinça,
+  // o zoom e o retorno ao tamanho normal com muito mais estabilidade que um
+  // canvas redimensionado dentro de uma área rolável.
+  if(window.matchMedia && window.matchMedia('(pointer: coarse)').matches){
+    pagesBox.classList.add('pdf-native-view');
+    pagesBox.innerHTML = `<iframe title="Pré-visualização do relatório" src="${url}#view=FitH" allow="fullscreen"></iframe>`;
+    return;
+  }
+  pagesBox.classList.remove('pdf-native-view');
+
   // Silencia avisos internos da biblioteca de PDF (tipo "fake worker" ou de fonte) —
   // são inofensivos, mas poluem o console à toa. Restaura o console normal depois.
   const originalWarn = console.warn;
@@ -2757,6 +2769,7 @@ function closePdfPreview(){
   const overlay = document.getElementById('pdfModal');
   const pagesBox = document.getElementById('pdfModalPages');
   overlay.style.display = 'none';
+  pagesBox.classList.remove('pdf-native-view');
   pagesBox.innerHTML = '';
 }
 
@@ -2991,7 +3004,7 @@ if('serviceWorker' in navigator){
     window.location.reload();
   });
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./service-worker.js?v=25', { updateViaCache:'none' })
+    navigator.serviceWorker.register('./service-worker.js?v=26', { updateViaCache:'none' })
       .then((registration)=>{
         registration.update().catch(()=>{});
         console.log('App pronto para uso offline.');
@@ -3002,7 +3015,7 @@ if('serviceWorker' in navigator){
 
 })();
 </script>
-<script src="./immutable-lock.js?v=25"></script>
-<script src="./mobile-touch-fix.js?v=25"></script>
+<script src="./immutable-lock.js?v=26"></script>
+<script src="./mobile-touch-fix.js?v=26"></script>
 </body>
 </html>
