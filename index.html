@@ -2383,11 +2383,10 @@ function generatePDF(reportArg){
   if(off.patrulheiro1) officerParts.push('Patrulheiro: ' + off.patrulheiro1);
   if(off.patrulheiro2) officerParts.push('Patrulheiro: ' + off.patrulheiro2);
   if(off.patrulheiro3) officerParts.push('Patrulheiro: ' + off.patrulheiro3);
-  const officersTxt = officerParts.length ? officerParts.join('  ·  ') : 'Não informado';
-  const wrappedOfficers = doc.splitTextToSize('Efetivo: ' + officersTxt, pageW - marginX*2 - 24);
-
   const lineH = 16;
-  const boxLines = 2 + wrappedOfficers.length;
+  // No quadro inicial ficam apenas as informações do período. A equipe é
+  // apresentada mais abaixo, junto das demais equipes do plantão.
+  const boxLines = 2;
   const boxH = boxLines * lineH + 16;
 
   doc.setFillColor(255,255,255); doc.setDrawColor(0,0,0);
@@ -2396,7 +2395,6 @@ function generatePDF(reportArg){
   let infoY = y + 18;
   doc.text(`Início: ${fmtDateBR(r.date)} (${weekdayFromISO(r.date)})   ·   Término: ${fmtDateBR(dataFim)} (${weekdayFromISO(dataFim)})`, marginX+12, infoY); infoY += lineH;
   doc.text(`Turno: ${r.turno || '-'}`, marginX+12, infoY); infoY += lineH;
-  doc.text(wrappedOfficers, marginX+12, infoY);
   y += boxH + 22;
 
   // Vehicle usage log
@@ -2476,6 +2474,27 @@ function generatePDF(reportArg){
       });
     }
     y += 10;
+  }
+
+  // Equipe principal do dia, posicionada junto às demais equipes no PDF.
+  if(officerParts.length){
+    checkPageBreak(46);
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(0,0,0);
+    doc.text('EQUIPE DO DIA', marginX, y);
+    y += 8;
+    doc.setDrawColor(255,199,44); doc.setLineWidth(0.7);
+    doc.line(marginX, y, pageW - marginX, y);
+    y += 18;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(0,0,0);
+    officerParts.forEach(part=>{
+      const lines = doc.splitTextToSize(part, pageW - marginX*2 - 8);
+      lines.forEach(line=>{
+        checkPageBreak(14);
+        doc.text(line, marginX+4, y);
+        y += 13.5;
+      });
+    });
+    y += 16;
   }
 
   // Patrulhas especializadas — integrantes e observações
