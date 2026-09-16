@@ -709,6 +709,32 @@ function stripAccents(s){
   return (s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 }
 
+// ---------------- Trocas de comandante ----------------
+function getCommanderEntries(report){
+  if(report && Array.isArray(report.commanderLog) && report.commanderLog.length){
+    return report.commanderLog;
+  }
+  const legacyName = report && report.officers && !Array.isArray(report.officers)
+    ? (report.officers.comandante || '')
+    : '';
+  return legacyName ? [{ nome: legacyName, horaInicio:'', horaFim:'' }] : [];
+}
+function getCommanderNames(report){
+  return getCommanderEntries(report).map(c=>(c.nome||'').trim()).filter(Boolean).join(', ');
+}
+function commanderPeriodText(c){
+  const inicio = c.horaInicio || '';
+  const fim = c.horaFim || '';
+  if(inicio && fim) return inicio + ' às ' + fim;
+  if(inicio) return 'entrada ' + inicio;
+  if(fim) return 'saída ' + fim;
+  return '';
+}
+function syncLegacyCommander(report){
+  if(!report.officers || Array.isArray(report.officers)) report.officers = {};
+  report.officers.comandante = getCommanderNames(report);
+}
+
 // ---------------- Sugestão de viatura (menu próprio, não usa <datalist>) ----------------
 // O <datalist> nativo do HTML tem suporte muito ruim/inconsistente em navegador de
 // celular (principalmente iPhone), então isso é feito na mão pra abrir sempre,
@@ -920,7 +946,7 @@ async function loadIndex(){
     reportsIndex = snap.docs.filter(d=>!d.data().deleted).map(d=>{
       const data = d.data();
       return {
-        id: d.id, date: data.date, turno: data.turno, comandante: (data.officers && data.officers.comandante) || '',
+        id: d.id, date: data.date, turno: data.turno, comandante: getCommanderNames(data),
         viaturas: [...new Set((data.vtrLog||[]).map(v=>v.viatura).filter(Boolean))].join(', '), status: data.status,
         occCount: (data.occurrences||[]).length
       };
@@ -938,7 +964,7 @@ async function loadTrash(){
     trashIndex = snap.docs.filter(d=>d.data().deleted).map(d=>{
       const data = d.data();
       return {
-        id: d.id, date: data.date, turno: data.turno, comandante: (data.officers && data.officers.comandante) || '',
+        id: d.id, date: data.date, turno: data.turno, comandante: getCommanderNames(data),
         viaturas: [...new Set((data.vtrLog||[]).map(v=>v.viatura).filter(Boolean))].join(', '), deletedAt: data.deletedAt,
         occCount: (data.occurrences||[]).length
       };
@@ -1002,7 +1028,7 @@ async function persistReport(report, showStatus){
   currentReportServerUpdatedAt = report.updatedAt; // atualiza a marca, já que acabamos de salvar
 
   const idx = reportsIndex.findIndex(r => r.id === report.id);
-  const summary = { id: report.id, date: report.date, turno: report.turno, comandante: (report.officers && report.officers.comandante) || '', viaturas: [...new Set((report.vtrLog||[]).map(v=>v.viatura).filter(Boolean))].join(', '), status: report.status, occCount: report.occurrences.length };
+  const summary = { id: report.id, date: report.date, turno: report.turno, comandante: getCommanderNames(report), viaturas: [...new Set((report.vtrLog||[]).map(v=>v.viatura).filter(Boolean))].join(', '), status: report.status, occCount: report.occurrences.length };
   if(idx >= 0) reportsIndex[idx] = summary; else reportsIndex.unshift(summary);
   if(showStatus){
     const hora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
@@ -1438,6 +1464,7 @@ function createNewReport(){
     date: iso,
     turno: '07h às 07h (dia seguinte)',
     vtrLog: [ { id: uid(), viatura:'', placa:'', horaInicio:'07:00', kmInicial:'', kmFinal:'' } ],
+    commanderLog: [ { id: uid(), nome:'', horaInicio:'07:00', horaFim:'' } ],
     officers: { comandante:'', motorista:'', patrulheiro1:'', patrulheiro2:'', patrulheiro3:'' },
     atividades: [],
     occurrences: [],
@@ -1475,6 +1502,13 @@ function renderEditor(){
   if(Array.isArray(r.officers) || !r.officers || typeof r.officers !== 'object'){
     r.officers = { comandante:'', motorista:'', patrulheiro1:'', patrulheiro2:'', patrulheiro3:'' };
   }
+  if(!Array.isArray(r.commanderLog) || r.commanderLog.length === 0){
+    // Migração dos plantões antigos, que tinham somente um campo de comandante.
+    r.commanderLog = [{
+      id: uid(), nome: r.officers.comandante || '', horaInicio:'07:00', horaFim:''
+    }];
+  }
+  r.commanderLog.forEach(c=>{ if(c && !c.id) c.id = uid(); });
   if(!Array.isArray(r.vtrLog) || r.vtrLog.length === 0){
     // Migração de plantões antigos (campo único de viatura) ou plantão sem nenhum registro ainda
     r.vtrLog = [{
@@ -1514,6 +1548,7 @@ function renderEditor(){
   // relatório do dia e ocorrências, não pra corrigir equipe/viatura.
   const locked = r.everClosed === true;
   const dis = locked ? 'disabled' : '';
+  const commanderHtml = r.commanderLog.map((c,i)=> renderCommanderSegment(c,i,r.commanderLog.length,locked)).join('');
   const vtrHtml = r.vtrLog.map((v,i)=> renderVtrSegment(v,i,r.vtrLog.length,locked)).join('');
   const vtrTotals = computeVtrTotals(r.vtrLog);
   const vtrTotalsHtml = renderVtrTotalsHtml(vtrTotals);
@@ -1534,15 +1569,17 @@ function renderEditor(){
         <div><label>Término do plantão</label><input type="text" value="${fmtDateBR(dataFim)} — ${weekdayFromISO(dataFim)}" disabled style="background:#F4F6FA;color:var(--ink-soft);"></div>
         <div><label>Turno</label><input type="text" id="fTurno" value="${escapeAttr(r.turno)}" placeholder="Ex: 07h às 07h (dia seguinte)" ${dis}></div>
       </div>
-      <label>Efetivo em serviço</label>
+      <label>Comandantes do plantão</label>
+      <div style="margin-top:8px;">${commanderHtml}</div>
+      ${locked ? '' : `<button class="btn btn-outline" id="btnAddCommander" style="margin:0 0 18px;">+ Registrar troca de comandante</button>`}
+      <label>Demais integrantes do efetivo</label>
       <div class="grid2">
-        <div><label>Comandante</label><input type="text" id="fOfComandante" value="${escapeAttr(r.officers.comandante||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
         <div><label>Motorista</label><input type="text" id="fOfMotorista" value="${escapeAttr(r.officers.motorista||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
         <div><label>Patrulheiro 1</label><input type="text" id="fOfPatrulheiro1" value="${escapeAttr(r.officers.patrulheiro1||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
         <div><label>Patrulheiro 2</label><input type="text" id="fOfPatrulheiro2" value="${escapeAttr(r.officers.patrulheiro2||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
         <div><label>Patrulheiro 3</label><input type="text" id="fOfPatrulheiro3" value="${escapeAttr(r.officers.patrulheiro3||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
       </div>
-      ${locked ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:10px;">🔒 Este plantão já foi fechado uma vez — esses dados ficam travados permanentemente, mesmo reabrindo o plantão.</p>` : ''}
+      ${locked ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:10px;">🔒 Este plantão já foi fechado uma vez — comandantes, horários e demais dados do efetivo ficam travados permanentemente, mesmo reabrindo o plantão.</p>` : ''}
     </div>
 
     <div class="card">
@@ -1602,6 +1639,25 @@ function renderEditor(){
       </div>
     </div>
   `;
+}
+
+function renderCommanderSegment(c, i, total, locked){
+  const dis = locked ? 'disabled' : '';
+  const periodo = commanderPeriodText(c);
+  return `
+  <div class="occ-item" data-ci="${i}">
+    <div class="occ-head">
+      <span><span class="occ-num">${String(i+1).padStart(2,'0')}</span>${escapeHtml(c.nome || 'Comandante não informado')}${periodo ? ` · ${escapeHtml(periodo)}` : ''}</span>
+      ${(total > 1 && !locked) ? `<button class="btn btn-danger btn-sm rm-commander" data-ci="${i}">Remover</button>` : ''}
+    </div>
+    <div class="occ-body">
+      <div class="grid3">
+        <div><label>Comandante</label><input type="text" data-cfield="nome" data-ci="${i}" value="${escapeAttr(c.nome||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
+        <div><label>Horário de entrada</label><input type="time" data-cfield="horaInicio" data-ci="${i}" value="${c.horaInicio||''}" ${dis}></div>
+        <div><label>Horário de saída</label><input type="time" data-cfield="horaFim" data-ci="${i}" value="${c.horaFim||''}" ${dis}></div>
+      </div>
+    </div>
+  </div>`;
 }
 
 function renderVtrSegment(v, i, total, locked){
@@ -1737,6 +1793,48 @@ function wireEditorEvents(){
   };
   document.getElementById('fTurno').oninput = e=>{ r.turno = e.target.value; scheduleSave(); };
 
+  document.querySelectorAll('[data-cfield]').forEach(el=>{
+    const handler = ()=>{
+      r.commanderLog[+el.dataset.ci][el.dataset.cfield] = el.value;
+      syncLegacyCommander(r);
+      scheduleSave();
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+    if(el.dataset.cfield === 'nome'){
+      el.addEventListener('blur', ()=>{
+        const fixed = normalizeText(el.value);
+        if(fixed !== el.value){
+          el.value = fixed;
+          r.commanderLog[+el.dataset.ci].nome = fixed;
+          syncLegacyCommander(r);
+          scheduleSave();
+        }
+      });
+    }
+  });
+  document.querySelectorAll('.rm-commander').forEach(b=>{
+    b.onclick = ()=>{
+      armConfirm(b, ()=>{
+        r.commanderLog.splice(+b.dataset.ci, 1);
+        syncLegacyCommander(r);
+        scheduleSave();
+        render();
+      });
+    };
+  });
+  const btnAddCommander = document.getElementById('btnAddCommander');
+  if(btnAddCommander) btnAddCommander.onclick = ()=>{
+    const now = new Date();
+    const hora = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    const anterior = r.commanderLog[r.commanderLog.length - 1];
+    if(anterior && !anterior.horaFim) anterior.horaFim = hora;
+    r.commanderLog.push({ id: uid(), nome:'', horaInicio:hora, horaFim:'' });
+    syncLegacyCommander(r);
+    scheduleSave();
+    render();
+  };
+
   function updateVtrKmDisplays(){
     r.vtrLog.forEach((v,i)=>{
       const ki = parseKm(v.kmInicial), kf = parseKm(v.kmFinal);
@@ -1828,7 +1926,7 @@ function wireEditorEvents(){
   };
 
   const officerFields = [
-    ['fOfComandante','comandante'], ['fOfMotorista','motorista'],
+    ['fOfMotorista','motorista'],
     ['fOfPatrulheiro1','patrulheiro1'], ['fOfPatrulheiro2','patrulheiro2'], ['fOfPatrulheiro3','patrulheiro3']
   ];
   officerFields.forEach(([id, key])=>{
@@ -2091,7 +2189,11 @@ function generatePDF(reportArg){
   const dataFim = addDaysISO(r.date, 1);
   const off = (r.officers && !Array.isArray(r.officers)) ? r.officers : {};
   const officerParts = [];
-  if(off.comandante) officerParts.push('Comandante: ' + off.comandante);
+  getCommanderEntries(r).forEach((c,i)=>{
+    if(!c.nome) return;
+    const periodo = commanderPeriodText(c);
+    officerParts.push(`Comandante${i ? ' ' + (i+1) : ''}: ${c.nome}${periodo ? ' (' + periodo + ')' : ''}`);
+  });
   if(off.motorista) officerParts.push('Motorista: ' + off.motorista);
   if(off.patrulheiro1) officerParts.push('Patrulheiro: ' + off.patrulheiro1);
   if(off.patrulheiro2) officerParts.push('Patrulheiro: ' + off.patrulheiro2);
@@ -2308,7 +2410,9 @@ function generatePDF(reportArg){
 
   const offSig = (r.officers && !Array.isArray(r.officers)) ? r.officers : {};
   const signatarios = [];
-  if(offSig.comandante) signatarios.push({ cargo: 'Comandante', nome: offSig.comandante });
+  getCommanderEntries(r).forEach((c,i)=>{
+    if(c.nome) signatarios.push({ cargo: i ? 'Comandante ' + (i+1) : 'Comandante', nome: c.nome });
+  });
   if(offSig.motorista) signatarios.push({ cargo: 'Motorista', nome: offSig.motorista });
   if(offSig.patrulheiro1) signatarios.push({ cargo: 'Patrulheiro', nome: offSig.patrulheiro1 });
   if(offSig.patrulheiro2) signatarios.push({ cargo: 'Patrulheiro', nome: offSig.patrulheiro2 });
