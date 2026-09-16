@@ -137,18 +137,33 @@ const LOGO_SSP_URI = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAQ
   --line:#D6DCE8;
   --radius:4px;
 }
-html{color-scheme:light;}
+html{
+  color-scheme:light;
+  width:100%;
+  max-width:100%;
+  overflow-x:hidden;
+  overscroll-behavior-x:none;
+  touch-action:pan-y pinch-zoom;
+}
 *{box-sizing:border-box;}
 html,body{margin:0;padding:0;background:#FFFFFF;}
 body{
   background:var(--parchment);
   color:var(--ink);
   font-family:'Source Sans 3',system-ui,sans-serif;
+  width:100%;
+  max-width:100%;
   min-height:100vh;
+  overflow-x:hidden;
+  overscroll-behavior-x:none;
+  touch-action:pan-y pinch-zoom;
   display:flex;
   flex-direction:column;
   -webkit-font-smoothing:antialiased;
 }
+body > *, #app, .wrap{max-width:100%;}
+img, canvas, video{max-width:100%;}
+pre, .rc-title, .rc-sub, .back-link{overflow-wrap:anywhere;word-break:break-word;}
 ::selection{background:var(--gold-light);}
 
 /* Guard against browser/OS forced-dark-mode inverting our light design */
@@ -170,6 +185,9 @@ body{
   position:sticky;
   top:0;
   z-index:20;
+  width:100%;
+  max-width:100%;
+  overflow-x:hidden;
 }
 .seal-group{display:flex;align-items:center;gap:8px;flex-shrink:0;}
 .seal-img{
@@ -193,7 +211,7 @@ body{
 }
 .topbar-right{
   display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  flex:0 0 auto;margin-left:auto;
+  flex:0 1 auto;min-width:0;margin-left:auto;
 }
 .topbar-actions{display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;}
 .conn-badge{
@@ -389,7 +407,20 @@ button{font-family:inherit;cursor:pointer;border:none;}
 }
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
-@media(max-width:600px){.grid2,.grid3{grid-template-columns:1fr;}}
+@media(max-width:600px){
+  .grid2,.grid3{grid-template-columns:minmax(0,1fr);}
+  .topbar{padding-left:14px;padding-right:14px;}
+  .topbar-titles{min-width:0;flex-basis:calc(100% - 110px);}
+  .topbar-right{width:100%;margin-left:0;justify-content:space-between;}
+  .topbar-actions{min-width:0;}
+  .report-card{align-items:flex-start;flex-wrap:wrap;}
+  .report-card .rc-main{flex:1 1 180px;max-width:100%;}
+  .rc-actions{max-width:100%;flex-wrap:wrap;}
+  .card{padding:16px 14px;}
+  .occ-body{padding:14px;}
+  .add-row{flex-wrap:wrap;}
+  .add-row input{min-width:0;flex:1 1 180px;}
+}
 
 .closure-box{
   display:flex;align-items:center;gap:14px;padding:14px 16px;
