@@ -1,7 +1,7 @@
 // ============================================================
 // Service Worker — Sistema de Ocorrências, Guarda Municipal de Itapajé
 // ============================================================
-const CACHE_NAME = 'gm-itapaje-app-v14';
+const CACHE_NAME = 'gm-itapaje-app-v15';
 
 const ASSETS_TO_CACHE = [
   './',
