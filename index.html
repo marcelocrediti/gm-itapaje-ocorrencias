@@ -735,6 +735,31 @@ function syncLegacyCommander(report){
   report.officers.comandante = getCommanderNames(report);
 }
 
+// ---------------- Patrulhas especializadas ----------------
+const SPECIAL_PATROL_CONFIG = {
+  mariaPenha: { title:'Patrulha Maria da Penha', icon:'🟣' },
+  ambiental: { title:'Patrulha Ambiental', icon:'🌿' }
+};
+function getSpecialPatrol(report, patrolKey){
+  const all = report && report.specialPatrols && typeof report.specialPatrols === 'object'
+    ? report.specialPatrols
+    : {};
+  const patrol = all[patrolKey] && typeof all[patrolKey] === 'object' ? all[patrolKey] : {};
+  return {
+    members: Array.isArray(patrol.members) ? patrol.members : [],
+    observacao: patrol.observacao || ''
+  };
+}
+function ensureSpecialPatrols(report){
+  if(!report.specialPatrols || typeof report.specialPatrols !== 'object') report.specialPatrols = {};
+  Object.keys(SPECIAL_PATROL_CONFIG).forEach(key=>{
+    const current = getSpecialPatrol(report, key);
+    if(!current.members.length) current.members.push({ id:uid(), nome:'', horaInicio:'', horaFim:'' });
+    current.members.forEach(m=>{ if(m && !m.id) m.id = uid(); });
+    report.specialPatrols[key] = current;
+  });
+}
+
 // ---------------- Sugestão de viatura (menu próprio, não usa <datalist>) ----------------
 // O <datalist> nativo do HTML tem suporte muito ruim/inconsistente em navegador de
 // celular (principalmente iPhone), então isso é feito na mão pra abrir sempre,
@@ -1465,6 +1490,10 @@ function createNewReport(){
     turno: '07h às 07h (dia seguinte)',
     vtrLog: [ { id: uid(), viatura:'', placa:'', horaInicio:'07:00', kmInicial:'', kmFinal:'' } ],
     commanderLog: [ { id: uid(), nome:'', horaInicio:'07:00', horaFim:'' } ],
+    specialPatrols: {
+      mariaPenha: { members:[{ id:uid(), nome:'', horaInicio:'', horaFim:'' }], observacao:'' },
+      ambiental: { members:[{ id:uid(), nome:'', horaInicio:'', horaFim:'' }], observacao:'' }
+    },
     officers: { comandante:'', motorista:'', patrulheiro1:'', patrulheiro2:'', patrulheiro3:'' },
     atividades: [],
     occurrences: [],
@@ -1509,6 +1538,7 @@ function renderEditor(){
     }];
   }
   r.commanderLog.forEach(c=>{ if(c && !c.id) c.id = uid(); });
+  ensureSpecialPatrols(r);
   if(!Array.isArray(r.vtrLog) || r.vtrLog.length === 0){
     // Migração de plantões antigos (campo único de viatura) ou plantão sem nenhum registro ainda
     r.vtrLog = [{
@@ -1549,6 +1579,8 @@ function renderEditor(){
   const locked = r.everClosed === true;
   const dis = locked ? 'disabled' : '';
   const commanderHtml = r.commanderLog.map((c,i)=> renderCommanderSegment(c,i,r.commanderLog.length,locked)).join('');
+  const mariaPenhaHtml = renderSpecialPatrolCard('mariaPenha', r.specialPatrols.mariaPenha, locked);
+  const ambientalHtml = renderSpecialPatrolCard('ambiental', r.specialPatrols.ambiental, locked);
   const vtrHtml = r.vtrLog.map((v,i)=> renderVtrSegment(v,i,r.vtrLog.length,locked)).join('');
   const vtrTotals = computeVtrTotals(r.vtrLog);
   const vtrTotalsHtml = renderVtrTotalsHtml(vtrTotals);
@@ -1581,6 +1613,9 @@ function renderEditor(){
       </div>
       ${locked ? `<p style="font-size:12px;color:var(--ink-soft);margin-top:10px;">🔒 Este plantão já foi fechado uma vez — comandantes, horários e demais dados do efetivo ficam travados permanentemente, mesmo reabrindo o plantão.</p>` : ''}
     </div>
+
+    ${mariaPenhaHtml}
+    ${ambientalHtml}
 
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;">
@@ -1639,6 +1674,41 @@ function renderEditor(){
       </div>
     </div>
   `;
+}
+
+function renderSpecialPatrolCard(patrolKey, patrol, locked){
+  const config = SPECIAL_PATROL_CONFIG[patrolKey];
+  const dis = locked ? 'disabled' : '';
+  const members = Array.isArray(patrol.members) ? patrol.members : [];
+  const membersHtml = members.map((m,i)=>{
+    const periodo = commanderPeriodText(m);
+    return `
+      <div class="occ-item" data-patrol="${patrolKey}" data-pi="${i}">
+        <div class="occ-head">
+          <span><span class="occ-num">${String(i+1).padStart(2,'0')}</span>${escapeHtml(m.nome || 'Integrante não informado')}${periodo ? ` · ${escapeHtml(periodo)}` : ''}</span>
+          ${(members.length > 1 && !locked) ? `<button class="btn btn-danger btn-sm rm-patrol-member" data-patrol="${patrolKey}" data-pi="${i}">Remover</button>` : ''}
+        </div>
+        <div class="occ-body">
+          <div class="grid3">
+            <div><label>Nome do integrante</label><input type="text" data-patrol="${patrolKey}" data-pfield="nome" data-pi="${i}" value="${escapeAttr(m.nome||'')}" placeholder="Nome" spellcheck="true" lang="pt-BR" ${dis}></div>
+            <div><label>Horário de entrada</label><input type="time" data-patrol="${patrolKey}" data-pfield="horaInicio" data-pi="${i}" value="${m.horaInicio||''}" ${dis}></div>
+            <div><label>Horário de saída</label><input type="time" data-patrol="${patrolKey}" data-pfield="horaFim" data-pi="${i}" value="${m.horaFim||''}" ${dis}></div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+  return `
+    <div class="card special-patrol-card" data-patrol-card="${patrolKey}">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h3 style="border:none;margin:0;padding:0;">${config.icon} ${config.title}</h3>
+        <span style="font-size:11px;color:var(--ink-soft);">Até 4 integrantes</span>
+      </div>
+      <div style="margin-top:14px;">${membersHtml}</div>
+      ${(!locked && members.length < 4) ? `<button class="btn btn-outline add-patrol-member" data-patrol="${patrolKey}" style="margin:0 0 16px;">+ Adicionar integrante</button>` : ''}
+      <label>Observação</label>
+      <textarea data-patrol-observation="${patrolKey}" placeholder="Escreva uma observação sobre esta patrulha" spellcheck="true" lang="pt-BR" ${dis}>${escapeHtml(patrol.observacao||'')}</textarea>
+      ${locked ? `<p style="font-size:12px;color:var(--ink-soft);margin:8px 0 0;">🔒 Integrantes, horários e observação travados após o fechamento do plantão.</p>` : ''}
+    </div>`;
 }
 
 function renderCommanderSegment(c, i, total, locked){
@@ -1834,6 +1904,56 @@ function wireEditorEvents(){
     scheduleSave();
     render();
   };
+
+  document.querySelectorAll('[data-pfield]').forEach(el=>{
+    const patrolKey = el.dataset.patrol;
+    const handler = ()=>{
+      const patrol = r.specialPatrols[patrolKey];
+      if(!patrol || !patrol.members[+el.dataset.pi]) return;
+      patrol.members[+el.dataset.pi][el.dataset.pfield] = el.value;
+      scheduleSave();
+    };
+    el.addEventListener('input', handler);
+    el.addEventListener('change', handler);
+    if(el.dataset.pfield === 'nome'){
+      el.addEventListener('blur', ()=>{
+        const fixed = normalizeText(el.value);
+        if(fixed !== el.value){
+          el.value = fixed;
+          r.specialPatrols[patrolKey].members[+el.dataset.pi].nome = fixed;
+          scheduleSave();
+        }
+      });
+    }
+  });
+  document.querySelectorAll('.rm-patrol-member').forEach(b=>{
+    b.onclick = ()=>{
+      armConfirm(b, ()=>{
+        const patrol = r.specialPatrols[b.dataset.patrol];
+        if(!patrol || patrol.members.length <= 1) return;
+        patrol.members.splice(+b.dataset.pi, 1);
+        scheduleSave();
+        render();
+      });
+    };
+  });
+  document.querySelectorAll('.add-patrol-member').forEach(b=>{
+    b.onclick = ()=>{
+      const patrol = r.specialPatrols[b.dataset.patrol];
+      if(!patrol || patrol.members.length >= 4) return;
+      patrol.members.push({ id:uid(), nome:'', horaInicio:'', horaFim:'' });
+      scheduleSave();
+      render();
+    };
+  });
+  document.querySelectorAll('[data-patrol-observation]').forEach(el=>{
+    el.oninput = ()=>{
+      const patrol = r.specialPatrols[el.dataset.patrolObservation];
+      if(!patrol) return;
+      patrol.observacao = el.value;
+      scheduleSave();
+    };
+  });
 
   function updateVtrKmDisplays(){
     r.vtrLog.forEach((v,i)=>{
@@ -2292,6 +2412,52 @@ function generatePDF(reportArg){
     }
     y += 10;
   }
+
+  // Patrulhas especializadas — integrantes, horários e observações
+  [
+    { key:'mariaPenha', title:'PATRULHA MARIA DA PENHA' },
+    { key:'ambiental', title:'PATRULHA AMBIENTAL' }
+  ].forEach(item=>{
+    const patrol = getSpecialPatrol(r, item.key);
+    const members = patrol.members.filter(m=>m && (m.nome || m.horaInicio || m.horaFim));
+    if(!members.length && !patrol.observacao) return;
+
+    checkPageBreak(46);
+    doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(0,0,0);
+    doc.text(item.title, marginX, y);
+    y += 8;
+    doc.setDrawColor(255,199,44); doc.setLineWidth(0.7);
+    doc.line(marginX, y, pageW - marginX, y);
+    y += 18;
+
+    members.forEach((m,i)=>{
+      const periodo = commanderPeriodText(m);
+      const memberText = `${i+1}. ${m.nome || 'Nome não informado'}${periodo ? ' · ' + periodo : ''}`;
+      const lines = doc.splitTextToSize(memberText, pageW - marginX*2 - 8);
+      lines.forEach(line=>{
+        checkPageBreak(14);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(0,0,0);
+        doc.text(line, marginX+4, y);
+        y += 13.5;
+      });
+    });
+
+    if(patrol.observacao){
+      y += 4;
+      checkPageBreak(28);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(0,0,0);
+      doc.text('OBSERVAÇÃO:', marginX+4, y);
+      y += 12;
+      const obsLines = doc.splitTextToSize(patrol.observacao, pageW - marginX*2 - 8);
+      obsLines.forEach(line=>{
+        checkPageBreak(13);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+        doc.text(line, marginX+4, y);
+        y += 13;
+      });
+    }
+    y += 16;
+  });
 
   // Relatório do dia — rondas, PBs, apoios etc. (o que não é ocorrência)
   const atividades = Array.isArray(r.atividades) ? r.atividades.filter(a => a && (a.hora || a.texto)) : [];
