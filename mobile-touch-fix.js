@@ -6,6 +6,7 @@
       width: 100%;
       max-width: 100%;
       overflow-x: hidden !important;
+      overflow-x: clip !important;
       overscroll-behavior-x: none;
       overscroll-behavior-y: contain;
       touch-action: pan-y pinch-zoom;
@@ -19,52 +20,23 @@
   `;
   document.head.appendChild(style);
 
-  function installFastSave(){
-    if(typeof window.scheduleSave === 'function' && !window.scheduleSave.__touchOptimized){
-      const originalPersist = window.persistReport;
-      window.scheduleSave = function(){
-        clearTimeout(window.saveTimer);
-        if(typeof window.setStatus === 'function') window.setStatus('Salvando…', true);
-        window.saveTimer = setTimeout(()=>{
-          if(typeof window.persistReport === 'function' && window.currentReport){
-            window.persistReport(window.currentReport, true);
-          }
-        }, 220);
-      };
-      window.scheduleSave.__touchOptimized = true;
-    }
-  }
-
-  function patchActionButtons(){
-    const saveBtn = document.getElementById('btnSave');
-    if(saveBtn && !saveBtn.dataset.touchPatched){
-      saveBtn.dataset.touchPatched = '1';
-      saveBtn.addEventListener('pointerdown', ()=> saveBtn.classList.add('touch-active'), {passive:true});
-      ['pointerup','pointercancel','pointerleave'].forEach(ev=>saveBtn.addEventListener(ev, ()=>saveBtn.classList.remove('touch-active'), {passive:true}));
-    }
-
-    const backBtn = document.getElementById('btnBack');
-    if(backBtn && !backBtn.dataset.touchPatched){
-      backBtn.dataset.touchPatched = '1';
-      backBtn.addEventListener('click', ()=>{
-        try{
-          if(typeof window.flushPendingSave === 'function') window.flushPendingSave();
-        }catch(e){ console.warn('Não foi possível forçar salvamento antes de voltar:', e); }
-      }, true);
-    }
-  }
-
   function reduceTapConfusion(){
-    document.addEventListener('touchstart', (e)=>{}, {passive:true});
+    let startX = 0;
+    let startY = 0;
+    document.addEventListener('touchstart', (e)=>{
+      const touch = e.touches && e.touches[0];
+      if(!touch) return;
+      startX = touch.clientX;
+      startY = touch.clientY;
+    }, {passive:true});
+    document.addEventListener('touchmove', (e)=>{
+      const touch = e.touches && e.touches[0];
+      if(!touch || e.touches.length > 1) return;
+      const dx = Math.abs(touch.clientX - startX);
+      const dy = Math.abs(touch.clientY - startY);
+      if(dx > dy && dx > 6) e.preventDefault();
+    }, {passive:false});
   }
 
-  installFastSave();
-  patchActionButtons();
   reduceTapConfusion();
-
-  const observer = new MutationObserver(()=>{
-    installFastSave();
-    patchActionButtons();
-  });
-  observer.observe(document.documentElement, {childList:true, subtree:true});
 })();
